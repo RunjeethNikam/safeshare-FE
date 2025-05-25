@@ -1,12 +1,13 @@
-// src/services/authService.ts
+// src/lib/authService.ts
 import type {
   ApiResponse,
   LoginResponse,
   SignUpResponse,
   AuthResult
 } from '@/types/auth';
+import { apiBaseUrl } from '@/lib/config';
 
-const API_BASE_URL = 'http://localhost:8080/auth';
+const API_BASE_URL = apiBaseUrl || 'http://localhost:8080/auth';
 
 export class AuthService {
   static async login(email: string, password: string): Promise<AuthResult<LoginResponse>> {
@@ -136,7 +137,16 @@ export class AuthService {
   static logout(): void {
     this.removeToken();
     if (typeof window !== 'undefined') {
+      // Import dynamically to avoid SSR issues
+      import('@/lib/api').then(({ removeAuthToken }) => {
+        removeAuthToken();
+      });
       window.location.href = '/auth';
     }
+  }
+
+  // Helper method to get current API URL (for debugging)
+  static getApiUrl(): string {
+    return API_BASE_URL;
   }
 }

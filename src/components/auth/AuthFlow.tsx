@@ -9,6 +9,7 @@ import SignUpStep from './SignUpStep';
 import OtpStep from './OtpStep';
 import { AuthData, AuthStep } from '@/types/auth';
 import { AuthService } from '@/lib/authService';
+import { setAuthToken } from '@/lib/api';
 
 interface SignupData {
   name: string;
@@ -66,7 +67,10 @@ export default function AuthFlow() {
       if (result.success && result.data) {
         // Store the token
         AuthService.setToken(result.data.accessToken);
-        router.push('/media');
+        setAuthToken(result.data.accessToken);
+        
+        // Redirect to home page
+        router.push('/');
       } else {
         setError(result.error || 'Invalid credentials');
       }
@@ -151,7 +155,10 @@ export default function AuthFlow() {
         
         if (loginResult.success && loginResult.data) {
           AuthService.setToken(loginResult.data.accessToken);
-          router.push('/media');
+          setAuthToken(loginResult.data.accessToken);
+          
+          // Redirect to home page
+          router.push('/');
         } else {
           // If auto-login fails, redirect to login page
           router.push('/auth?message=Account created successfully. Please sign in.');
@@ -276,12 +283,8 @@ export default function AuthFlow() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow-sm sm:rounded-lg sm:px-10">
-          {renderCurrentStep()}
-        </div>
-      </div>
+    <div className="w-full">
+      {renderCurrentStep()}
     </div>
   );
 }

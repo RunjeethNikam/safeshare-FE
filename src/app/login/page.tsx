@@ -1,4 +1,5 @@
 'use client';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import EmailStep from '@/components/auth/EmailStep';
@@ -15,6 +16,7 @@ interface SignupData {
   password: string;
 }
 
+// This must be the default export for Next.js pages
 export default function LoginPage() {
   const [currentStep, setCurrentStep] = useState<AuthStep>('email');
   const [authData, setAuthData] = useState<AuthData>({
@@ -77,8 +79,9 @@ export default function LoginPage() {
       const result = await AuthService.login(authData.email, password);
       
       if (result.success && result.data?.accessToken) {
-        localStorage.setItem('accessToken', result.data.accessToken);
-        router.push('/media');
+        AuthService.setToken(result.data.accessToken);
+        // Redirect to home page instead of /media
+        router.push('/');
       } else {
         setError(result.error || 'Invalid credentials');
       }
@@ -168,8 +171,9 @@ export default function LoginPage() {
         const loginResult = await AuthService.login(signupData.email, signupData.password);
         
         if (loginResult.success && loginResult.data?.accessToken) {
-          localStorage.setItem('accessToken', loginResult.data.accessToken);
-          router.push('/media');
+          AuthService.setToken(loginResult.data.accessToken);
+          // Redirect to home page instead of /media
+          router.push('/');
         } else {
           // If auto-login fails, redirect to login page
           setCurrentStep('email');
@@ -288,5 +292,11 @@ export default function LoginPage() {
       default:
         return null;
     }
-  }
+  };
+
+  return (
+    <AuthLayout>
+      {renderCurrentStep()}
+    </AuthLayout>
+  );
 }
