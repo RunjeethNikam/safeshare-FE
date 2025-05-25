@@ -1,96 +1,164 @@
 // src/components/auth/OtpStep.tsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StepProps } from '@/types/auth';
 import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
 import ErrorMessage from '@/components/ui/ErrorMessage';
+import BackButton from '@/components/ui/BackButton';
 
 interface OtpStepProps extends StepProps {
   email: string;
-  otp: string;
   onSubmit: (otp: string) => void;
+  onBack: () => void;
+  onResendOtp: () => void;
 }
 
 export default function OtpStep({
   email,
-  otp: initialOtp,
   onSubmit,
+  onBack,
+  onResendOtp,
   loading,
   error,
   setError,
 }: OtpStepProps) {
-  const [otp, setOtp] = useState(initialOtp);
+  const [otp, setOtp] = useState('');
+  const [canResend, setCanResend] = useState(false);
+  const [countdown, setCountdown] = useState(60);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          setCanResend(true);
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!otp.trim()) {
+      setError('Please enter the verification code');
+      return;
+    }
+
+    if (otp.length !== 6) {
+      setError('Verification code must be 6 digits');
+      return;
+    }
+
+    // Check if OTP contains only numbers
+    if (!/^\d{6}$/.test(otp)) {
+      setError('Verification code must contain only numbers');
+      return;
+    }
+
     setError('');
     onSubmit(otp);
   };
 
-  const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-    setOtp(value);
+  const handleResend = () => {
+    setCanResend(false);
+    setCountdown(60);
     setError('');
+    onResendOtp();
+    
+    // Restart the timer
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          setCanResend(true);
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
   };
 
-  const handleResendCode = () => {
-    // TODO: Implement resend OTP functionality
-    console.log('Resending OTP to:', email);
+  const formatOtp = (value: string) => {
+    // Only allow numbers and limit to 6 digits
+    const cleaned = value.replace(/\D/g, '').slice(0, 6);
+    return cleaned;
   };
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
-      <div className="text-center">
-        <h2 className="text-2xl font-light text-gray-900 mb-3">
-          Verify your email
-        </h2>
-        <p className="text-sm text-gray-600 mb-2">
-          We've sent a verification code to
-        </p>
-        <p className="text-sm text-blue-600 font-medium break-all mb-8">
-          {email}
-        </p>
-        <p className="text-sm text-gray-600">
-          Please enter the code below.
-        </p>
+      <div>
+        <BackButton onClick={onBack} />
+        
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-light text-gray-900 mb-3">
+            Enter verification code
+          </h2>
+          <p className="text-sm text-gray-600 mb-2">
+            We've sent a 6-digit code to
+          </p>
+          <p className="text-sm font-medium text-gray-900">
+            {email}
+          </p>
+        </div>
       </div>
 
       <div className="space-y-4">
         <div className="flex justify-center">
-          <input
+          <Input
             id="otp"
             name="otp"
             type="text"
-            maxLength={6}
+            inputMode="numeric"
             required
             placeholder="000000"
-            className="w-48 px-4 py-4 border border-gray-300 rounded-lg placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center text-2xl tracking-[0.5em] font-mono"
             value={otp}
-            onChange={handleOtpChange}
+            onChange={(e) => {
+              const formatted = formatOtp(e.target.value);
+              setOtp(formatted);
+              setError('');
+            }}
             autoFocus
+            className="text-center text-2xl font-mono tracking-widest w-48"
+            maxLength={6}
           />
         </div>
 
         <ErrorMessage error={error} />
 
-        <div className="text-center">
-          <button
-            type="button"
-            className="text-sm text-blue-600 hover:text-blue-700 hover:underline transition-colors"
-            onClick={handleResendCode}
-          >
-            Didn't receive the code? Resend
-          </button>
-        </div>
-
         <Button
           type="submit"
           loading={loading}
           loadingText="Verifying..."
-          disabled={otp.length !== 6}
           className="w-full"
+          disabled={otp.length !== 6}
         >
-          Verify
+          Verify & Create Account
         </Button>
+
+        <div className="text-center pt-4">
+          <p className="text-sm text-gray-600 mb-2">
+            Didn't receive the code?
+          </p>
+          {canResend ? (
+            <button
+              type="button"
+              className="text-blue-600 hover:text-blue-700 hover:underline transition-colors font-medium text-sm"
+              onClick={handleResend}
+              disabled={loading}
+            >
+              Resend verification code
+            </button>
+          ) : (
+            <p className="text-sm text-gray-500">
+              Resend code in {countdown}s
+            </p>
+          )}
+        </div>
       </div>
     </form>
   );

@@ -1,9 +1,9 @@
-// src/lib/auth.ts
-import type { 
-  ApiResponse, 
-  LoginResponse, 
-  SignUpResponse, 
-  AuthResult 
+// src/services/authService.ts
+import type {
+  ApiResponse,
+  LoginResponse,
+  SignUpResponse,
+  AuthResult
 } from '@/types/auth';
 
 const API_BASE_URL = 'http://localhost:8080/auth';
@@ -21,18 +21,19 @@ export class AuthService {
 
       const data: ApiResponse<LoginResponse> = await response.json();
 
-      if (data.error) {
+      if (response.ok && data.data) {
+        return {
+          success: true,
+          data: data.data,
+        };
+      } else {
         return {
           success: false,
-          error: data.error.message,
+          error: data.error?.message || 'Invalid email or password',
         };
       }
-
-      return {
-        success: true,
-        data: data.data,
-      };
     } catch (error) {
+      console.error('Login error:', error);
       return {
         success: false,
         error: 'Network error. Please try again.',
@@ -44,6 +45,7 @@ export class AuthService {
     name: string;
     email: string;
     password: string;
+    verified?: boolean;
   }): Promise<AuthResult<SignUpResponse>> {
     try {
       const response = await fetch(`${API_BASE_URL}/signUp`, {
@@ -56,18 +58,19 @@ export class AuthService {
 
       const data: ApiResponse<SignUpResponse> = await response.json();
 
-      if (data.error) {
+      if (response.ok && data.data) {
+        return {
+          success: true,
+          data: data.data,
+        };
+      } else {
         return {
           success: false,
-          error: data.error.message,
+          error: data.error?.message || 'Failed to create account',
         };
       }
-
-      return {
-        success: true,
-        data: data.data,
-      };
     } catch (error) {
+      console.error('Signup error:', error);
       return {
         success: false,
         error: 'Network error. Please try again.',
@@ -75,16 +78,36 @@ export class AuthService {
     }
   }
 
-  static async verifyOtp(email: string, otp: string): Promise<AuthResult> {
-    // TODO: Implement actual OTP verification API call
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
+  static async checkUserExists(email: string): Promise<AuthResult<{ exists: boolean }>> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/check-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        return {
           success: true,
-          data: { verified: true },
-        });
-      }, 2000);
-    });
+          data: { exists: data.data || false },
+        };
+      } else {
+        return {
+          success: false,
+          error: data.error?.message || 'Failed to check user',
+        };
+      }
+    } catch (error) {
+      console.error('Check user error:', error);
+      return {
+        success: false,
+        error: 'Network error. Please try again.',
+      };
+    }
   }
 
   static getToken(): string | null {
@@ -92,6 +115,12 @@ export class AuthService {
       return localStorage.getItem('accessToken');
     }
     return null;
+  }
+
+  static setToken(token: string): void {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accessToken', token);
+    }
   }
 
   static removeToken(): void {
@@ -102,5 +131,12 @@ export class AuthService {
 
   static isAuthenticated(): boolean {
     return !!this.getToken();
+  }
+
+  static logout(): void {
+    this.removeToken();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/auth';
+    }
   }
 }

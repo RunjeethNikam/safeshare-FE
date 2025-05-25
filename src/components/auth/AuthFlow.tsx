@@ -1,15 +1,14 @@
-// src/app/page.tsx (Main login page as first page)
+// src/components/auth/AuthFlow.tsx
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import EmailStep from '@/components/auth/EmailStep';
-import PasswordStep from '@/components/auth/PasswordStep';
-import SignUpStep from '@/components/auth/SignUpStep';
-import OtpStep from '@/components/auth/OtpStep';
-import AuthLayout from '@/components/auth/AuthLayout';
+import EmailStep from './EmailStep';
+import PasswordStep from './PasswordStep';
+import SignUpStep from './SignUpStep';
+import OtpStep from './OtpStep';
+import { AuthData, AuthStep } from '@/types/auth';
 import { AuthService } from '@/lib/authService';
-import type { AuthStep, AuthData } from '@/types/auth';
 
 interface SignupData {
   name: string;
@@ -17,8 +16,11 @@ interface SignupData {
   password: string;
 }
 
-export default function LoginPage() {
+export default function AuthFlow() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState<AuthStep>('email');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [authData, setAuthData] = useState<AuthData>({
     email: '',
     password: '',
@@ -26,21 +28,9 @@ export default function LoginPage() {
     otp: '',
   });
   const [signupData, setSignupData] = useState<SignupData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const router = useRouter();
-
-  const updateAuthData = (data: Partial<AuthData>) => {
-    setAuthData(prev => ({ ...prev, ...data }));
-  };
 
   // Email step handler - Check if user exists using backend API
   const handleEmailSubmit = async (email: string) => {
-    if (!email) {
-      setError('Please enter your email');
-      return;
-    }
-
     setLoading(true);
     setError('');
 
@@ -48,7 +38,7 @@ export default function LoginPage() {
       const result = await AuthService.checkUserExists(email);
 
       if (result.success && result.data) {
-        updateAuthData({ email });
+        setAuthData(prev => ({ ...prev, email }));
         
         if (result.data.exists) {
           setCurrentStep('password');
@@ -66,33 +56,29 @@ export default function LoginPage() {
   };
 
   // Password step handler (for existing users)
-  const handleSignInSubmit = async (password: string) => {
-    if (!password) {
-      setError('Please enter your password');
-      return;
-    }
-
+  const handlePasswordSubmit = async (password: string) => {
     setLoading(true);
     setError('');
 
     try {
       const result = await AuthService.login(authData.email, password);
-      
-      if (result.success && result.data?.accessToken) {
-        localStorage.setItem('accessToken', result.data.accessToken);
+
+      if (result.success && result.data) {
+        // Store the token
+        AuthService.setToken(result.data.accessToken);
         router.push('/media');
       } else {
         setError(result.error || 'Invalid credentials');
       }
     } catch (err) {
-      setError('Network error. Please try again.');
+      setError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   // Signup step handler - Send OTP via backend
-  const handleSignUpSubmit = async (data: SignupData) => {
+  const handleSignupSubmit = async (data: SignupData) => {
     setLoading(true);
     setError('');
 
@@ -111,7 +97,6 @@ export default function LoginPage() {
 
       if (response.ok) {
         setSignupData(data);
-        updateAuthData(data);
         setCurrentStep('otp');
       } else {
         setError(result.error || 'Failed to send verification code');
@@ -125,19 +110,14 @@ export default function LoginPage() {
 
   // OTP verification handler - Verify OTP and create user via backend
   const handleOtpSubmit = async (otp: string) => {
-    if (!otp || otp.length !== 6) {
-      setError('Please enter a valid 6-digit OTP');
-      return;
-    }
+    setLoading(true);
+    setError('');
 
     if (!signupData) {
       setError('Session expired. Please start again.');
       setCurrentStep('email');
       return;
     }
-
-    setLoading(true);
-    setError('');
 
     try {
       // First verify OTP
@@ -169,13 +149,12 @@ export default function LoginPage() {
         // Now login the user automatically
         const loginResult = await AuthService.login(signupData.email, signupData.password);
         
-        if (loginResult.success && loginResult.data?.accessToken) {
-          localStorage.setItem('accessToken', loginResult.data.accessToken);
+        if (loginResult.success && loginResult.data) {
+          AuthService.setToken(loginResult.data.accessToken);
           router.push('/media');
         } else {
           // If auto-login fails, redirect to login page
-          setCurrentStep('email');
-          setError('Account created successfully. Please sign in.');
+          router.push('/auth?message=Account created successfully. Please sign in.');
         }
       } else {
         setError(signupResult.error || 'Failed to create account');
@@ -217,21 +196,8 @@ export default function LoginPage() {
   };
 
   // Navigation handlers
-  const resetToEmail = () => {
+  const handleBackToEmail = () => {
     setCurrentStep('email');
-    updateAuthData({ password: '' });
-    setError('');
-  };
-
-  const switchToSignUp = () => {
-    setCurrentStep('signup');
-    setError('');
-  };
-
-  const switchToSignIn = () => {
-    setCurrentStep('email');
-    updateAuthData({ name: '', password: '' });
-    setSignupData(null);
     setError('');
   };
 
@@ -240,61 +206,82 @@ export default function LoginPage() {
     setError('');
   };
 
-  const renderCurrentStep = () => {
-    const commonProps = {
-      loading,
-      error,
-      setError,
-    };
+  const handleGoToSignup = () => {
+    setCurrentStep('signup');
+    setError('');
+  };
 
+  const handleGoToSignin = () => {
+    setCurrentStep('email');
+    setError('');
+  };
+
+  // Render current step
+  const renderCurrentStep = () => {
     switch (currentStep) {
       case 'email':
         return (
           <EmailStep
-            {...commonProps}
             email={authData.email}
             onSubmit={handleEmailSubmit}
-            onCreateAccount={switchToSignUp}
+            onCreateAccount={handleGoToSignup}
+            loading={loading}
+            error={error}
+            setError={setError}
           />
         );
+
       case 'password':
         return (
           <PasswordStep
-            {...commonProps}
             email={authData.email}
             password={authData.password}
-            onSubmit={handleSignInSubmit}
-            onBack={resetToEmail}
+            onSubmit={handlePasswordSubmit}
+            onBack={handleBackToEmail}
+            loading={loading}
+            error={error}
+            setError={setError}
           />
         );
+
       case 'signup':
         return (
           <SignUpStep
-            {...commonProps}
             initialData={authData}
-            onSubmit={handleSignUpSubmit}
-            onBack={switchToSignIn}
-            onSignIn={switchToSignIn}
+            onSubmit={handleSignupSubmit}
+            onBack={handleBackToEmail}
+            onSignIn={handleGoToSignin}
+            loading={loading}
+            error={error}
+            setError={setError}
           />
         );
+
       case 'otp':
         return (
           <OtpStep
-            {...commonProps}
-            email={signupData?.email || authData.email}
+            email={signupData?.email || ''}
             onSubmit={handleOtpSubmit}
             onBack={handleBackToSignup}
             onResendOtp={handleResendOtp}
+            loading={loading}
+            error={error}
+            setError={setError}
           />
         );
+
       default:
         return null;
     }
   };
 
   return (
-    <AuthLayout>
-      {renderCurrentStep()}
-    </AuthLayout>
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow-sm sm:rounded-lg sm:px-10">
+          {renderCurrentStep()}
+        </div>
+      </div>
+    </div>
   );
 }
