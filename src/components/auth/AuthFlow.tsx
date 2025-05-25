@@ -155,13 +155,13 @@ export default function AuthFlow() {
         
         if (loginResult.success && loginResult.data) {
           AuthService.setToken(loginResult.data.accessToken);
-          setAuthToken(loginResult.data.accessToken);
+          // setAuthToken(loginResult.data.accessToken);
           
           // Redirect to home page
           router.push('/');
         } else {
           // If auto-login fails, redirect to login page
-          router.push('/auth?message=Account created successfully. Please sign in.');
+          router.push('/login?message=Account created successfully. Please sign in.');
         }
       } else {
         setError(signupResult.error || 'Failed to create account');

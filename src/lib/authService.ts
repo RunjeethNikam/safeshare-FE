@@ -10,6 +10,7 @@ import { apiBaseUrl } from '@/lib/config';
 const API_BASE_URL = apiBaseUrl || 'http://localhost:8080/auth';
 
 export class AuthService {
+  // Authentication API calls
   static async login(email: string, password: string): Promise<AuthResult<LoginResponse>> {
     try {
       const response = await fetch(`${API_BASE_URL}/login`, {
@@ -111,6 +112,7 @@ export class AuthService {
     }
   }
 
+  // Token management methods
   static getToken(): string | null {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('accessToken');
@@ -120,16 +122,32 @@ export class AuthService {
 
   static setToken(token: string): void {
     if (typeof window !== 'undefined') {
+      // Save to localStorage
       localStorage.setItem('accessToken', token);
+      
+      // Dynamically import and set axios header to avoid circular dependency
+      import('@/lib/api').then(({ setAuthToken }) => {
+        setAuthToken(token);
+      }).catch(error => {
+        console.error('Failed to set auth token in api:', error);
+      });
     }
   }
 
   static removeToken(): void {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('accessToken');
+      
+      // Dynamically import and remove axios header to avoid circular dependency
+      import('@/lib/api').then(({ removeAuthToken }) => {
+        removeAuthToken();
+      }).catch(error => {
+        console.error('Failed to remove auth token from api:', error);
+      });
     }
   }
 
+  // Authentication state methods
   static isAuthenticated(): boolean {
     return !!this.getToken();
   }
@@ -137,15 +155,11 @@ export class AuthService {
   static logout(): void {
     this.removeToken();
     if (typeof window !== 'undefined') {
-      // Import dynamically to avoid SSR issues
-      import('@/lib/api').then(({ removeAuthToken }) => {
-        removeAuthToken();
-      });
-      window.location.href = '/auth';
+      window.location.href = '/login';
     }
   }
 
-  // Helper method to get current API URL (for debugging)
+  // Utility methods
   static getApiUrl(): string {
     return API_BASE_URL;
   }
