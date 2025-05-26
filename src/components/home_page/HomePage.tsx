@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Media, fetchUserMedia } from "@/lib/media";
 import { MediaService } from "@/lib/mediaService";
 import { useMediaUpload } from "@/hooks/useMediaUpload";
