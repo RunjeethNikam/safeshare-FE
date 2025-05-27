@@ -1,4 +1,4 @@
-// src/components/auth/EmailStep.tsx
+// Clean EmailStep.tsx
 import { useState } from 'react';
 import { StepProps } from '@/types/auth';
 import Button from '@/components/ui/Button';
@@ -29,6 +29,7 @@ export default function EmailStep({
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
+      {/* Header */}
       <div className="text-center">
         <h2 className="text-2xl font-light text-gray-900 mb-3">
           Sign in
@@ -38,6 +39,7 @@ export default function EmailStep({
         </p>
       </div>
 
+      {/* Form */}
       <div className="space-y-4">
         <Input
           id="email"
@@ -45,14 +47,16 @@ export default function EmailStep({
           type="email"
           autoComplete="email"
           required
-          placeholder="Email, phone, or Skype"
+          placeholder="Email address"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="text-base"
+          autoFocus
         />
 
         <ErrorMessage error={error} />
 
+        {/* Create Account Link */}
         <div className="flex items-center justify-between">
           <button
             type="button"
@@ -66,7 +70,9 @@ export default function EmailStep({
         <Button
           type="submit"
           loading={loading}
+          loadingText="Checking..."
           className="w-full"
+          disabled={!email.trim()}
         >
           Next
         </Button>

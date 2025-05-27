@@ -1,136 +1,139 @@
-// src/lib/authService.ts
-import type {
-  ApiResponse,
-  LoginResponse,
-  SignUpResponse,
-  AuthResult
-} from '@/types/auth';
+// Clean authService.ts
+import type { LoginResponse, SignUpResponse, AuthResult } from '@/types/auth';
 import { apiBaseUrl } from '@/lib/config';
 
 const API_BASE_URL = apiBaseUrl || 'http://localhost:8080/auth';
 
+// API Response interface matching your backend exactly
+interface ApiResponse<T = any> {
+  timeStamp: string;  // Note: timeStamp not timestamp
+  data: T | null;
+  error: {
+    status: string;
+    message: string;
+    subErrors: string[] | null;
+  } | null;
+}
+
+// Base API call function
+const apiCall = async <T>(
+  endpoint: string, 
+  options: RequestInit = {}
+): Promise<AuthResult<T>> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      credentials: 'include',
+      ...options,
+    });
+
+    const data: ApiResponse<T> = await response.json();
+
+    if (response.ok && data.data !== null) {
+      return { success: true, data: data.data };
+    } else {
+      return { 
+        success: false, 
+        error: data.error?.message || 'Request failed' 
+      };
+    }
+  } catch (error) {
+    console.error(`API call failed for ${endpoint}:`, error);
+    return { 
+      success: false, 
+      error: 'Network error. Please try again.' 
+    };
+  }
+};
+
 export class AuthService {
-  // Authentication API calls
-  static async login(email: string, password: string): Promise<AuthResult<LoginResponse>> {
+  // Check if user exists
+  static async checkUserExists(email: string): Promise<AuthResult<boolean>> {
     try {
-      const response = await fetch(`${API_BASE_URL}/login`, {
+      const response = await fetch(`${API_BASE_URL}/check-user`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
 
-      const data: ApiResponse<LoginResponse> = await response.json();
+      // This endpoint returns: {"timeStamp":"...","data":true/false,"error":null}
+      const result: ApiResponse<boolean> = await response.json();
 
-      if (response.ok && data.data) {
-        return {
-          success: true,
-          data: data.data,
+      if (response.ok) {
+        return { 
+          success: true, 
+          data: result.data !== null ? result.data : false 
         };
       } else {
-        return {
-          success: false,
-          error: data.error?.message || 'Invalid email or password',
+        return { 
+          success: false, 
+          error: result.error?.message || 'Failed to check user' 
         };
       }
     } catch (error) {
-      console.error('Login error:', error);
-      return {
-        success: false,
-        error: 'Network error. Please try again.',
-      };
+      console.error('Check user error:', error);
+      return { success: false, error: 'Network error. Please try again.' };
     }
+  }
+
+  // Authentication
+  static async login(email: string, password: string): Promise<AuthResult<LoginResponse>> {
+    return apiCall<LoginResponse>('/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
   }
 
   static async signUp(userData: {
     name: string;
     email: string;
     password: string;
-    verified?: boolean;
   }): Promise<AuthResult<SignUpResponse>> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/signUp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(userData),
-      });
-
-      const data: ApiResponse<SignUpResponse> = await response.json();
-
-      if (response.ok && data.data) {
-        return {
-          success: true,
-          data: data.data,
-        };
-      } else {
-        return {
-          success: false,
-          error: data.error?.message || 'Failed to create account',
-        };
-      }
-    } catch (error) {
-      console.error('Signup error:', error);
-      return {
-        success: false,
-        error: 'Network error. Please try again.',
-      };
-    }
+    return apiCall<SignUpResponse>('/signUp', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
   }
 
-  static async checkUserExists(email: string): Promise<AuthResult<{ exists: boolean }>> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/check-user`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        return {
-          success: true,
-          data: { exists: data.data || false },
-        };
-      } else {
-        return {
-          success: false,
-          error: data.error?.message || 'Failed to check user',
-        };
-      }
-    } catch (error) {
-      console.error('Check user error:', error);
-      return {
-        success: false,
-        error: 'Network error. Please try again.',
-      };
-    }
+  // OTP operations
+  static async sendOTP(
+    email: string, 
+    type: 'SIGNUP' | 'PASSWORD_RESET' = 'SIGNUP'
+  ): Promise<AuthResult<{ message: string }>> {
+    return apiCall<{ message: string }>('/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, type }),
+    });
   }
 
-  // Token management methods
+  static async verifyOTP(
+    email: string, 
+    otp: string
+  ): Promise<AuthResult<{ message: string; verified: boolean }>> {
+    return apiCall<{ message: string; verified: boolean }>('/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+  }
+
+  // Token management
   static getToken(): string | null {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('accessToken');
-    }
-    return null;
+    return typeof window !== 'undefined' 
+      ? localStorage.getItem('accessToken') 
+      : null;
   }
 
   static setToken(token: string): void {
     if (typeof window !== 'undefined') {
-      // Save to localStorage
       localStorage.setItem('accessToken', token);
       
-      // Dynamically import and set axios header to avoid circular dependency
+      // Set auth header in API client
       import('@/lib/api').then(({ setAuthToken }) => {
         setAuthToken(token);
-      }).catch(error => {
-        console.error('Failed to set auth token in api:', error);
-      });
+      }).catch(console.error);
     }
   }
 
@@ -138,29 +141,33 @@ export class AuthService {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('accessToken');
       
-      // Dynamically import and remove axios header to avoid circular dependency
+      // Remove auth header from API client
       import('@/lib/api').then(({ removeAuthToken }) => {
         removeAuthToken();
-      }).catch(error => {
-        console.error('Failed to remove auth token from api:', error);
-      });
+      }).catch(console.error);
     }
   }
 
-  // Authentication state methods
+  // Auth state
   static isAuthenticated(): boolean {
     return !!this.getToken();
   }
 
-  static logout(): void {
-    this.removeToken();
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login';
+  static async logout(): Promise<void> {
+    try {
+      await apiCall('/logout', { method: 'POST' });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      this.removeToken();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
     }
   }
 
-  // Utility methods
-  static getApiUrl(): string {
-    return API_BASE_URL;
+  // Token refresh
+  static async refreshToken(): Promise<AuthResult<LoginResponse>> {
+    return apiCall<LoginResponse>('/refresh', { method: 'POST' });
   }
 }
