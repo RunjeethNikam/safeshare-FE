@@ -1,6 +1,6 @@
 // src/components/home_page/MediaListView.tsx
 import React from 'react';
-import { Media } from '@/lib/media';
+import { Media } from "@/lib/mediaService";
 import MediaPreviewPane from './MediaPreviewPane';
 import styles from '@/styles/MediaGallery.module.css';
 

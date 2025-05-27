@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import EmailStep from '@/components/auth/EmailStep';
 import PasswordStep from '@/components/auth/PasswordStep';
@@ -18,6 +18,7 @@ interface SignupData {
 
 export default function LoginPage() {
   const router = useRouter();
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState<AuthStep>('email');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,65 +30,66 @@ export default function LoginPage() {
   });
   const [signupData, setSignupData] = useState<SignupData | null>(null);
 
-  // Utility functions
+  // Check authentication on page load
+  useEffect(() => {
+    const checkInitialAuth = async () => {
+      try {
+        const isAuthenticated = await AuthService.isAuthenticated();
+        
+        if (isAuthenticated) {
+          router.replace('/');
+          return;
+        }
+      } catch (error) {
+        console.error('Initial auth check error:', error);
+      } finally {
+        setIsInitialLoading(false);
+      }
+    };
+
+    checkInitialAuth();
+  }, [router]);
+
   const updateAuthData = (data: Partial<AuthData>) => {
     setAuthData(prev => ({ ...prev, ...data }));
   };
-
-  const resetError = () => setError('');
 
   const handleError = (message: string) => {
     setError(message);
     setLoading(false);
   };
 
-  // Email step handler
   const handleEmailSubmit = async (email: string) => {
     if (!email?.trim()) {
       return handleError('Please enter your email');
     }
 
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
       const result = await AuthService.checkUserExists(email);
-      
-      // Debug logging
-      console.log('Check user result:', result);
 
-      if (result.success) {
+      if (result.success && result.data !== undefined) {
         updateAuthData({ email });
-        
-        if (result.data === true) {
-          console.log('User exists - going to password step');
-          setCurrentStep('password');
-        } else if (result.data === false) {
-          console.log('User does not exist - going to signup step');
-          setCurrentStep('signup');
-        } else {
-          console.log('Unexpected data value:', result.data);
-          handleError('Unexpected response from server');
-        }
+        setCurrentStep(result.data ? 'password' : 'signup');
       } else {
         handleError(result.error || 'Failed to check user');
       }
     } catch (err) {
-      console.error('Error in handleEmailSubmit:', err);
       handleError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Password step handler (existing users)
   const handlePasswordSubmit = async (password: string) => {
     if (!password?.trim()) {
       return handleError('Please enter your password');
     }
 
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
       const result = await AuthService.login(authData.email, password);
@@ -105,10 +107,9 @@ export default function LoginPage() {
     }
   };
 
-  // Signup step handler
   const handleSignUpSubmit = async (data: SignupData) => {
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
       const result = await AuthService.sendOTP(data.email, 'SIGNUP');
@@ -127,7 +128,6 @@ export default function LoginPage() {
     }
   };
 
-  // OTP verification handler
   const handleOtpSubmit = async (otp: string) => {
     if (!otp || otp.length !== 6) {
       return handleError('Please enter a valid 6-digit OTP');
@@ -139,22 +139,19 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
-      // Verify OTP
       const otpResult = await AuthService.verifyOTP(signupData.email, otp);
       if (!otpResult.success) {
         return handleError(otpResult.error || 'Invalid verification code');
       }
 
-      // Create user account
       const signupResult = await AuthService.signUp(signupData);
       if (!signupResult.success) {
         return handleError(signupResult.error || 'Failed to create account');
       }
 
-      // Auto-login
       const loginResult = await AuthService.login(signupData.email, signupData.password);
       if (loginResult.success && loginResult.data?.accessToken) {
         AuthService.setToken(loginResult.data.accessToken);
@@ -170,12 +167,11 @@ export default function LoginPage() {
     }
   };
 
-  // Resend OTP handler
   const handleResendOtp = async () => {
     if (!signupData) return;
 
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
       const result = await AuthService.sendOTP(signupData.email, 'SIGNUP');
@@ -189,17 +185,15 @@ export default function LoginPage() {
     }
   };
 
-  // Navigation handlers
   const goToStep = (step: AuthStep, resetData = false) => {
     setCurrentStep(step);
-    resetError();
+    setError('');
     if (resetData) {
       setSignupData(null);
       updateAuthData({ name: '', password: '' });
     }
   };
 
-  // Render current step
   const renderCurrentStep = () => {
     const commonProps = { loading, error, setError };
 
@@ -251,6 +245,15 @@ export default function LoginPage() {
         return null;
     }
   };
+
+  // Show loading while checking initial authentication
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <AuthLayout>

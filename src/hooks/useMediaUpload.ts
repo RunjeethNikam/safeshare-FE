@@ -1,7 +1,6 @@
 // src/hooks/useMediaUpload.ts
 import { useState } from 'react';
-import { Media, fetchUserMedia } from '@/lib/media';
-import { MediaService } from '@/lib/mediaService';
+import { MediaService, Media, fetchUserMedia } from "@/lib/mediaService";
 
 interface UploadState {
   loading: boolean;

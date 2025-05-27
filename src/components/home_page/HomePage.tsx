@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Media, fetchUserMedia } from "@/lib/media";
-import { MediaService } from "@/lib/mediaService";
+import { MediaService, Media, fetchUserMedia } from "@/lib/mediaService";
 import { useMediaUpload } from "@/hooks/useMediaUpload";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";

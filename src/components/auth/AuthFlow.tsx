@@ -30,23 +30,14 @@ export default function AuthFlow() {
   });
   const [signupData, setSignupData] = useState<SignupData | null>(null);
 
-  // Utility functions
-  const resetError = () => setError('');
-  
   const handleError = (message: string) => {
     setError(message);
     setLoading(false);
   };
 
-  const goToStep = (step: AuthStep) => {
-    setCurrentStep(step);
-    resetError();
-  };
-
-  // Email step handler
   const handleEmailSubmit = async (email: string) => {
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
       const result = await AuthService.checkUserExists(email);
@@ -64,10 +55,9 @@ export default function AuthFlow() {
     }
   };
 
-  // Password step handler
   const handlePasswordSubmit = async (password: string) => {
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
       const result = await AuthService.login(authData.email, password);
@@ -86,10 +76,9 @@ export default function AuthFlow() {
     }
   };
 
-  // Signup step handler
   const handleSignupSubmit = async (data: SignupData) => {
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
       const result = await AuthService.sendOTP(data.email, 'SIGNUP');
@@ -107,7 +96,6 @@ export default function AuthFlow() {
     }
   };
 
-  // OTP verification handler
   const handleOtpSubmit = async (otp: string) => {
     if (!signupData) {
       handleError('Session expired. Please start again.');
@@ -115,22 +103,19 @@ export default function AuthFlow() {
     }
 
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
-      // Verify OTP
       const otpResult = await AuthService.verifyOTP(signupData.email, otp);
       if (!otpResult.success) {
         return handleError(otpResult.error || 'Invalid verification code');
       }
 
-      // Create user
       const signupResult = await AuthService.signUp(signupData);
       if (!signupResult.success) {
         return handleError(signupResult.error || 'Failed to create account');
       }
 
-      // Auto-login
       const loginResult = await AuthService.login(signupData.email, signupData.password);
       if (loginResult.success && loginResult.data) {
         AuthService.setToken(loginResult.data.accessToken);
@@ -145,12 +130,11 @@ export default function AuthFlow() {
     }
   };
 
-  // Resend OTP handler
   const handleResendOtp = async () => {
     if (!signupData) return;
 
     setLoading(true);
-    resetError();
+    setError('');
 
     try {
       const result = await AuthService.sendOTP(signupData.email, 'SIGNUP');
@@ -164,7 +148,11 @@ export default function AuthFlow() {
     }
   };
 
-  // Render current step
+  const goToStep = (step: AuthStep) => {
+    setCurrentStep(step);
+    setError('');
+  };
+
   const renderCurrentStep = () => {
     const commonProps = { loading, error, setError };
 

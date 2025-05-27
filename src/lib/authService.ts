@@ -1,4 +1,4 @@
-// Clean authService.ts
+// Clean AuthService for HttpOnly cookies
 import type { LoginResponse, SignUpResponse, AuthResult } from '@/types/auth';
 import { apiBaseUrl } from '@/lib/config';
 
@@ -6,7 +6,7 @@ const API_BASE_URL = apiBaseUrl || 'http://localhost:8080/auth';
 
 // API Response interface matching your backend exactly
 interface ApiResponse<T = any> {
-  timeStamp: string;  // Note: timeStamp not timestamp
+  timeStamp: string;
   data: T | null;
   error: {
     status: string;
@@ -59,7 +59,6 @@ export class AuthService {
         body: JSON.stringify({ email }),
       });
 
-      // This endpoint returns: {"timeStamp":"...","data":true/false,"error":null}
       const result: ApiResponse<boolean> = await response.json();
 
       if (response.ok) {
@@ -126,11 +125,14 @@ export class AuthService {
       : null;
   }
 
+  static getRefreshTokenFromCookie(): string | null {
+    return null; // Cannot read HttpOnly cookies from JavaScript
+  }
+
   static setToken(token: string): void {
     if (typeof window !== 'undefined') {
       localStorage.setItem('accessToken', token);
       
-      // Set auth header in API client
       import('@/lib/api').then(({ setAuthToken }) => {
         setAuthToken(token);
       }).catch(console.error);
@@ -141,16 +143,53 @@ export class AuthService {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('accessToken');
       
-      // Remove auth header from API client
       import('@/lib/api').then(({ removeAuthToken }) => {
         removeAuthToken();
       }).catch(console.error);
     }
   }
 
-  // Auth state
-  static isAuthenticated(): boolean {
-    return !!this.getToken();
+  // Auth check with HttpOnly cookie support
+  static async isAuthenticated(): Promise<boolean> {
+    const accessToken = this.getToken();
+    
+    if (accessToken) {
+      return true;
+    }
+    
+    const refreshResult = await this.attemptTokenRefresh();
+    return refreshResult.success;
+  }
+
+  // Attempt token refresh using HttpOnly cookie
+  static async attemptTokenRefresh(): Promise<AuthResult<LoginResponse>> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data: ApiResponse<LoginResponse> = await response.json();
+
+      if (response.ok && data.data) {
+        this.setToken(data.data.accessToken);
+        return { success: true, data: data.data };
+      } else {
+        return { 
+          success: false, 
+          error: data.error?.message || 'Token refresh failed' 
+        };
+      }
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      return { 
+        success: false, 
+        error: 'Network error during token refresh' 
+      };
+    }
   }
 
   static async logout(): Promise<void> {
@@ -166,8 +205,20 @@ export class AuthService {
     }
   }
 
-  // Token refresh
+  // Ensure valid token for HttpOnly cookies
+  static async ensureValidToken(): Promise<boolean> {
+    const accessToken = this.getToken();
+    
+    if (accessToken) {
+      return true;
+    }
+    
+    const refreshResult = await this.attemptTokenRefresh();
+    return refreshResult.success;
+  }
+
+  // Legacy method compatibility
   static async refreshToken(): Promise<AuthResult<LoginResponse>> {
-    return apiCall<LoginResponse>('/refresh', { method: 'POST' });
+    return this.attemptTokenRefresh();
   }
 }
