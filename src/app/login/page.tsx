@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import EmailStep from '@/components/auth/EmailStep';
 import PasswordStep from '@/components/auth/PasswordStep';
@@ -16,9 +16,12 @@ interface SignupData {
   password: string;
 }
 
-// This must be the default export for Next.js pages
 export default function LoginPage() {
+  const router = useRouter();
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState<AuthStep>('email');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [authData, setAuthData] = useState<AuthData>({
     email: '',
     password: '',
@@ -26,19 +29,39 @@ export default function LoginPage() {
     otp: '',
   });
   const [signupData, setSignupData] = useState<SignupData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const router = useRouter();
+
+  // Check authentication on page load
+  useEffect(() => {
+    const checkInitialAuth = async () => {
+      try {
+        const isAuthenticated = await AuthService.isAuthenticated();
+        
+        if (isAuthenticated) {
+          router.replace('/');
+          return;
+        }
+      } catch (error) {
+        console.error('Initial auth check error:', error);
+      } finally {
+        setIsInitialLoading(false);
+      }
+    };
+
+    checkInitialAuth();
+  }, [router]);
 
   const updateAuthData = (data: Partial<AuthData>) => {
     setAuthData(prev => ({ ...prev, ...data }));
   };
 
-  // Email step handler - Check if user exists using backend API
+  const handleError = (message: string) => {
+    setError(message);
+    setLoading(false);
+  };
+
   const handleEmailSubmit = async (email: string) => {
-    if (!email) {
-      setError('Please enter your email');
-      return;
+    if (!email?.trim()) {
+      return handleError('Please enter your email');
     }
 
     setLoading(true);
@@ -47,29 +70,22 @@ export default function LoginPage() {
     try {
       const result = await AuthService.checkUserExists(email);
 
-      if (result.success && result.data) {
+      if (result.success && result.data !== undefined) {
         updateAuthData({ email });
-        
-        if (result.data.exists) {
-          setCurrentStep('password');
-        } else {
-          setCurrentStep('signup');
-        }
+        setCurrentStep(result.data ? 'password' : 'signup');
       } else {
-        setError(result.error || 'Failed to check user');
+        handleError(result.error || 'Failed to check user');
       }
     } catch (err) {
-      setError('Something went wrong. Please try again.');
+      handleError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Password step handler (for existing users)
-  const handleSignInSubmit = async (password: string) => {
-    if (!password) {
-      setError('Please enter your password');
-      return;
+  const handlePasswordSubmit = async (password: string) => {
+    if (!password?.trim()) {
+      return handleError('Please enter your password');
     }
 
     setLoading(true);
@@ -80,116 +96,77 @@ export default function LoginPage() {
       
       if (result.success && result.data?.accessToken) {
         AuthService.setToken(result.data.accessToken);
-        // Redirect to home page instead of /media
         router.push('/');
       } else {
-        setError(result.error || 'Invalid credentials');
+        handleError(result.error || 'Invalid credentials');
       }
     } catch (err) {
-      setError('Network error. Please try again.');
+      handleError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Signup step handler - Send OTP via backend
   const handleSignUpSubmit = async (data: SignupData) => {
     setLoading(true);
     setError('');
 
     try {
-      // Send OTP via your backend API
-      const response = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: data.email,
-          type: 'signup',
-        }),
-      });
+      const result = await AuthService.sendOTP(data.email, 'SIGNUP');
 
-      const result = await response.json();
-
-      if (response.ok) {
+      if (result.success) {
         setSignupData(data);
         updateAuthData(data);
         setCurrentStep('otp');
       } else {
-        setError(result.error || 'Failed to send verification code');
+        handleError(result.error || 'Failed to send verification code');
       }
     } catch (err) {
-      setError('Something went wrong. Please try again.');
+      handleError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // OTP verification handler - Verify OTP and create user via backend
   const handleOtpSubmit = async (otp: string) => {
     if (!otp || otp.length !== 6) {
-      setError('Please enter a valid 6-digit OTP');
-      return;
+      return handleError('Please enter a valid 6-digit OTP');
     }
 
     if (!signupData) {
-      setError('Session expired. Please start again.');
-      setCurrentStep('email');
-      return;
+      handleError('Session expired. Please start again.');
+      return setCurrentStep('email');
     }
 
     setLoading(true);
     setError('');
 
     try {
-      // First verify OTP
-      const otpResponse = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: signupData.email,
-          otp,
-        }),
-      });
-
-      const otpResult = await otpResponse.json();
-
-      if (!otpResponse.ok) {
-        setError(otpResult.error || 'Invalid verification code');
-        return;
+      const otpResult = await AuthService.verifyOTP(signupData.email, otp);
+      if (!otpResult.success) {
+        return handleError(otpResult.error || 'Invalid verification code');
       }
 
-      // If OTP is valid, create user via backend API
-      const signupResult = await AuthService.signUp({
-        name: signupData.name,
-        email: signupData.email,
-        password: signupData.password,
-        verified: true,
-      });
+      const signupResult = await AuthService.signUp(signupData);
+      if (!signupResult.success) {
+        return handleError(signupResult.error || 'Failed to create account');
+      }
 
-      if (signupResult.success) {
-        // Now login the user automatically
-        const loginResult = await AuthService.login(signupData.email, signupData.password);
-        
-        if (loginResult.success && loginResult.data?.accessToken) {
-          AuthService.setToken(loginResult.data.accessToken);
-          // Redirect to home page instead of /media
-          router.push('/');
-        } else {
-          // If auto-login fails, redirect to login page
-          setCurrentStep('email');
-          setError('Account created successfully. Please sign in.');
-        }
+      const loginResult = await AuthService.login(signupData.email, signupData.password);
+      if (loginResult.success && loginResult.data?.accessToken) {
+        AuthService.setToken(loginResult.data.accessToken);
+        router.push('/');
       } else {
-        setError(signupResult.error || 'Failed to create account');
+        setCurrentStep('email');
+        handleError('Account created successfully. Please sign in.');
       }
     } catch (err) {
-      setError('Something went wrong. Please try again.');
+      handleError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Resend OTP handler
   const handleResendOtp = async () => {
     if (!signupData) return;
 
@@ -197,57 +174,28 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const response = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: signupData.email,
-          type: 'signup',
-        }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        setError(result.error || 'Failed to resend verification code');
+      const result = await AuthService.sendOTP(signupData.email, 'SIGNUP');
+      if (!result.success) {
+        handleError(result.error || 'Failed to resend verification code');
       }
     } catch (err) {
-      setError('Something went wrong. Please try again.');
+      handleError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Navigation handlers
-  const resetToEmail = () => {
-    setCurrentStep('email');
-    updateAuthData({ password: '' });
+  const goToStep = (step: AuthStep, resetData = false) => {
+    setCurrentStep(step);
     setError('');
-  };
-
-  const switchToSignUp = () => {
-    setCurrentStep('signup');
-    setError('');
-  };
-
-  const switchToSignIn = () => {
-    setCurrentStep('email');
-    updateAuthData({ name: '', password: '' });
-    setSignupData(null);
-    setError('');
-  };
-
-  const handleBackToSignup = () => {
-    setCurrentStep('signup');
-    setError('');
+    if (resetData) {
+      setSignupData(null);
+      updateAuthData({ name: '', password: '' });
+    }
   };
 
   const renderCurrentStep = () => {
-    const commonProps = {
-      loading,
-      error,
-      setError,
-    };
+    const commonProps = { loading, error, setError };
 
     switch (currentStep) {
       case 'email':
@@ -256,43 +204,56 @@ export default function LoginPage() {
             {...commonProps}
             email={authData.email}
             onSubmit={handleEmailSubmit}
-            onCreateAccount={switchToSignUp}
+            onCreateAccount={() => goToStep('signup')}
           />
         );
+
       case 'password':
         return (
           <PasswordStep
             {...commonProps}
             email={authData.email}
             password={authData.password}
-            onSubmit={handleSignInSubmit}
-            onBack={resetToEmail}
+            onSubmit={handlePasswordSubmit}
+            onBack={() => goToStep('email')}
           />
         );
+
       case 'signup':
         return (
           <SignUpStep
             {...commonProps}
             initialData={authData}
             onSubmit={handleSignUpSubmit}
-            onBack={switchToSignIn}
-            onSignIn={switchToSignIn}
+            onBack={() => goToStep('email', true)}
+            onSignIn={() => goToStep('email', true)}
           />
         );
+
       case 'otp':
         return (
           <OtpStep
             {...commonProps}
             email={signupData?.email || authData.email}
             onSubmit={handleOtpSubmit}
-            onBack={handleBackToSignup}
+            onBack={() => goToStep('signup')}
             onResendOtp={handleResendOtp}
           />
         );
+
       default:
         return null;
     }
   };
+
+  // Show loading while checking initial authentication
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <AuthLayout>

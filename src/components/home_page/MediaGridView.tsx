@@ -1,6 +1,6 @@
 // src/components/home_page/MediaGridView.tsx
 import React from 'react';
-import { Media } from '@/lib/media';
+import {  Media } from "@/lib/mediaService";
 import styles from '@/styles/MediaGallery.module.css';
 
 interface MediaGridViewProps {

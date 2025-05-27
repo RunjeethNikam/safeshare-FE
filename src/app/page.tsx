@@ -4,29 +4,37 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import HomePage from "@/components/home_page/HomePage";
-import { setAuthToken } from '@/lib/api';
 import { AuthService } from '@/lib/authService';
 
 export default function App() {
-  const router = useRouter();
+ const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check authentication
-    const checkAuth = () => {
-      const token = AuthService.getToken();
-      
-      if (!token) {
-        // No token found, redirect to auth page
+    const checkAuth = async () => {
+      try {
+        const accessToken = AuthService.getToken();
+        
+        if (accessToken) {
+          setIsAuthenticated(true);
+          return;
+        }
+        
+        const refreshResult = await AuthService.attemptTokenRefresh();
+        
+        if (refreshResult.success) {
+          setIsAuthenticated(true);
+        } else {
+          router.replace('/login');
+        }
+        
+      } catch (error) {
+        console.error('Auth check failed:', error);
         router.replace('/login');
-      } else {
-        // Token exists, set it in API headers and show home page
-        setAuthToken(token);
-        setIsAuthenticated(true);
+      } finally {
+        setIsLoading(false);
       }
-      
-      setIsLoading(false);
     };
 
     checkAuth();
@@ -37,6 +45,7 @@ export default function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <p className="ml-3 text-gray-600">Checking authentication...</p>
       </div>
     );
   }
@@ -46,6 +55,6 @@ export default function App() {
     return <HomePage />;
   }
 
-  // Return null while redirecting (loading state handles the UI)
+  // Return null while redirecting
   return null;
 }

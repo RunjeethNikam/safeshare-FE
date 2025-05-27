@@ -1,4 +1,4 @@
-// src/components/auth/AuthLayout.tsx
+// Clean AuthLayout.tsx
 import React from 'react';
 import SafeShareLogo from '@/components/ui/SafeShareLogo';
 
