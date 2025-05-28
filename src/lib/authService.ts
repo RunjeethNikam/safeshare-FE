@@ -1,6 +1,7 @@
 // Clean AuthService for HttpOnly cookies
 import type { LoginResponse, SignUpResponse, AuthResult } from '@/types/auth';
 import { apiBaseUrl } from '@/lib/config';
+import { api } from '@/lib/api'; 
 
 const API_BASE_URL = apiBaseUrl || 'http://localhost:8080/auth';
 
@@ -221,4 +222,18 @@ export class AuthService {
   static async refreshToken(): Promise<AuthResult<LoginResponse>> {
     return this.attemptTokenRefresh();
   }
+
+  static async getUserDetails(): Promise<AuthResult<{ id: string; name: string; email: string; roles: string[] }>> {
+    try {
+      const response = await api.get('/auth/get-user-detail');
+      return { success: true, data: response.data.data };
+    } catch (error: any) {
+      console.error('getUserDetails failed:', error);
+      return {
+        success: false,
+        error: error.response?.data?.error?.message || 'Failed to fetch user details',
+      };
+    }
+  }
+
 }
