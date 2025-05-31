@@ -1,3 +1,4 @@
+// src/components/home_page/HomePage.tsx (Updated to use AppHeader)
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
@@ -5,7 +6,7 @@ import { MediaService, Media, fetchUserMedia } from "@/lib/mediaService";
 import { useMediaUpload } from "@/hooks/useMediaUpload";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
-import MediaHeader from "./MediaHeader";
+import AppHeader from "@/components/ui/AppHeader";
 import MediaContainer from "./MediaContainer";
 import UploadModal from "./UploadModal";
 import ErrorMessage from "./ErrorMessage";
@@ -25,7 +26,6 @@ export default function HomePage() {
 
   // Custom hooks
   const { uploadState, handleUpload } = useMediaUpload(setMediaList, setError);
-
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
@@ -126,12 +126,18 @@ export default function HomePage() {
     <main className={styles.main}>
       <UploadModal uploadState={uploadState} />
       
-      <MediaHeader 
+      <AppHeader 
+        title="Safeshare"
+        icon="📂"
+        showUpload={true}
+        showViewToggle={true}
         viewMode={viewMode}
         switchViewMode={switchViewMode}
         handleUpload={handleUpload}
         uploadLoading={uploadState.loading}
         uploadProgress={uploadState.progress}
+        showStorageInfo={true}
+        showBillingInfo={false}
       />
 
       <ErrorMessage error={error} setError={setError} />

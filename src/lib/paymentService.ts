@@ -1,12 +1,25 @@
-// lib/paymentService.ts
-import { api } from '@/lib/api';
+// src/lib/paymentService.ts
+import { api } from './api';
 
-export interface StorageData {
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export interface StripeResponseDTO {
+  sessionId: string;
+  url: string;
+  status: string;
+  message?: string;
+}
+
+export interface StorageInfo {
   userId: string;
   currentStorageInBytes: number;
   currentStorageInMB: number;
   currentStorageInGB: number;
-  lastUpdated: string;
+  lastUpdated: string | null;
   totalRecords: string;
 }
 
@@ -25,44 +38,24 @@ export interface MonthlyBill {
   billingPeriod: string;
 }
 
+export interface PaymentInformation {
+  id: string;
+  userId: string;
+  storageGb: number;
+  costInUsd: number;
+  timestamp: string;
+  month: number;
+  year: number;
+}
+
 export interface PaymentHistory {
   content: PaymentInformation[];
   totalElements: number;
   totalPages: number;
-  size: number;
   number: number;
-}
-
-export interface PaymentInformation {
-  id: string;
-  userId: string;
-  timestamp: string;
-  totalStorageUsedInBytes: number;
-  previousStorageInBytes: number;
-  changeInStorageBytes: number;
-  actionType: 'UPLOAD' | 'DELETE';
-  mediaId: string;
-  fileName: string;
-}
-
-export interface StorageUsage {
-  id: string;
-  userId: string;
-  timestamp: string;
-  storageUsedInBytes: number;
-  periodStart: string;
-  periodEnd?: string;
-  durationInSeconds?: number;
-  calculatedCost?: number;
-  costPerBytePerSecond: number;
-  status: 'ACTIVE' | 'COMPLETED';
-}
-
-export interface StripeResponse {
-  status: string;
-  message: string;
-  sessionId?: string;
-  sessionUrl?: string;
+  size: number;
+  first: boolean;
+  last: boolean;
 }
 
 export interface PaymentStatus {
@@ -75,230 +68,152 @@ export interface PaymentStatus {
   updatedAt: string;
 }
 
-export interface CostCalculation {
-  userId: string;
-  month: number;
-  year: number;
-  monthName: string;
-  totalCostUSD: number;
-  periodStart: string;
-  periodEnd: string;
-  currentStorageBytes: number;
-  currentStorageMB: number;
-  currentStorageGB: number;
-  monthlyStats: {
-    totalCost: number;
-    maxStorageBytes: number;
-    minStorageBytes: number;
-    avgStorageBytes: number;
-    maxStorageMB: number;
-    minStorageMB: number;
-    avgStorageMB: number;
-    totalUsagePeriods: number;
-    costPerMBPerDay: number;
-  };
-}
+class PaymentService {
+  private async makeRequest<T>(
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    endpoint: string,
+    params?: Record<string, string | number>
+  ): Promise<ApiResponse<T>> {
+    try {
+      let url = endpoint;
+      
+      // Add query parameters if provided
+      if (params && Object.keys(params).length > 0) {
+        const searchParams = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+          searchParams.append(key, value.toString());
+        });
+        url += `?${searchParams.toString()}`;
+      }
 
-export class PaymentService {
-  
-  // Payment Information endpoints
-  static async getCurrentStorage(): Promise<StorageData> {
-    const response = await api.get('/payment-info/current-storage');
-    return response.data;
+      const response = await api({
+        method,
+        url,
+      });
+
+      // Handle nested response structure from your backend
+      const responseData = response.data;
+      
+      // If the response has a nested data structure, extract it
+      if (responseData && typeof responseData === 'object' && 'data' in responseData) {
+        return { success: true, data: responseData.data };
+      }
+
+      return { success: true, data: responseData };
+    } catch (error: any) {
+      console.error(`PaymentService error:`, error);
+      
+      // Extract error message from axios error
+      let errorMessage = 'Unknown error occurred';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data) {
+        errorMessage = typeof error.response.data === 'string' 
+          ? error.response.data 
+          : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
   }
 
-  static async getMonthlyBill(month?: number, year?: number): Promise<MonthlyBill> {
-    const params = new URLSearchParams();
-    if (month) params.append('month', month.toString());
-    if (year) params.append('year', year.toString());
+  async checkoutStorageBill(month?: number, year?: number): Promise<ApiResponse<StripeResponseDTO>> {
+    const params: Record<string, number> = {};
+    if (month) params.month = month;
+    if (year) params.year = year;
     
-    const response = await api.get(`/payment-info/monthly-bill?${params.toString()}`);
-    return response.data;
+    return this.makeRequest<StripeResponseDTO>('POST', '/payment/checkout', params);
   }
 
-  static async getStorageHistory(page = 0, size = 10): Promise<PaymentHistory> {
-    const response = await api.get(`/payment-info/storage-history?page=${page}&size=${size}`);
-    return response.data;
+  async getCurrentStorage(): Promise<ApiResponse<StorageInfo>> {
+    return this.makeRequest<StorageInfo>('GET', '/payment-info/current-storage');
   }
 
-  static async getLatestStorageInfo(): Promise<PaymentInformation> {
-    const response = await api.get('/payment-info/latest');
-    return response.data;
+  async getMonthlyBill(month?: number, year?: number): Promise<ApiResponse<MonthlyBill>> {
+    const params: Record<string, number> = {};
+    if (month) params.month = month;
+    if (year) params.year = year;
+    
+    return this.makeRequest<MonthlyBill>('GET', '/payment-info/monthly-bill', params);
   }
 
-  static async getStorageUsageHistory(page = 0, size = 10): Promise<{ content: StorageUsage[] }> {
-    const response = await api.get(`/payment-info/usage-history?page=${page}&size=${size}`);
-    return response.data;
+  async getStorageHistory(page: number = 0, size: number = 10): Promise<ApiResponse<PaymentHistory>> {
+    const params = { page, size };
+    return this.makeRequest<PaymentHistory>('GET', '/payment-info/storage-history', params);
   }
 
-  static async getDailyCost(): Promise<{
+  async getPaymentStatus(sessionId: string): Promise<ApiResponse<PaymentStatus>> {
+    return this.makeRequest<PaymentStatus>('GET', `/payment/status/${sessionId}`);
+  }
+
+  async getLatestStorageInfo(): Promise<ApiResponse<PaymentInformation>> {
+    return this.makeRequest<PaymentInformation>('GET', '/payment-info/latest');
+  }
+
+  async getDailyCost(): Promise<ApiResponse<{
     userId: string;
     dailyCostUSD: number;
     period: string;
     timestamp: string;
-  }> {
-    const response = await api.get('/payment-info/daily-cost');
-    return response.data;
+  }>> {
+    return this.makeRequest('GET', '/payment-info/daily-cost');
   }
 
-  static async getCostCalculation(month?: number, year?: number): Promise<CostCalculation> {
-    const params = new URLSearchParams();
-    if (month) params.append('month', month.toString());
-    if (year) params.append('year', year.toString());
+  async getCostCalculation(month?: number, year?: number): Promise<ApiResponse<{
+    userId: string;
+    month: number;
+    year: number;
+    monthName: string;
+    totalCostUSD: number;
+    periodStart: string;
+    periodEnd: string;
+    currentStorageBytes: number;
+    currentStorageMB: number;
+    currentStorageGB: number;
+    monthlyStats: any;
+  }>> {
+    const params: Record<string, number> = {};
+    if (month) params.month = month;
+    if (year) params.year = year;
     
-    const response = await api.get(`/payment-info/cost-calculation?${params.toString()}`);
-    return response.data;
+    return this.makeRequest('GET', '/payment-info/cost-calculation', params);
   }
 
-  // Payment endpoints
-  static async createCheckoutSession(month?: number, year?: number): Promise<StripeResponse> {
-    const params = new URLSearchParams();
-    if (month) params.append('month', month.toString());
-    if (year) params.append('year', year.toString());
+  // Helper method for handling Stripe redirects
+  static handleStripeRedirect(sessionId: string, success: boolean) {
+    const currentUrl = window.location.origin;
+    const successUrl = `${currentUrl}/billing?session_id=${sessionId}&success=true`;
+    const cancelUrl = `${currentUrl}/billing?session_id=${sessionId}&cancelled=true`;
     
-    const response = await api.post(`/payment/checkout?${params.toString()}`);
-    return response.data;
+    return success ? successUrl : cancelUrl;
   }
 
-  static async getPaymentStatus(sessionId: string): Promise<PaymentStatus> {
-    const response = await api.get(`/payment/status/${sessionId}`);
-    return response.data;
-  }
-
-  static async handlePaymentSuccess(sessionId: string): Promise<{
-    status: string;
-    message: string;
-    sessionId: string;
-    amount?: number;
-    currency?: string;
-    userId?: string;
-  }> {
-    const response = await api.get(`/payment/success?session_id=${sessionId}`);
-    return response.data;
-  }
-
-  static async handlePaymentCancel(): Promise<{
-    status: string;
-    message: string;
-  }> {
-    const response = await api.get('/payment/cancel');
-    return response.data;
-  }
-
-  // Utility methods for data processing
-  static formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
-
-  static formatCurrency(amount: number | string): string {
-    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+  // Utility method for formatting currency
+  static formatCurrency(amount: string | number): string {
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
-      maximumFractionDigits: 6
-    }).format(numAmount);
+      maximumFractionDigits: 6,
+    }).format(num);
   }
 
-  static formatDateTime(dateTime: string): string {
-    return new Date(dateTime).toLocaleString();
-  }
-
-  static formatDate(dateTime: string): string {
-    return new Date(dateTime).toLocaleDateString();
-  }
-
-  // Chart data processing
-  static async getChartData(days = 30): Promise<Array<{
-    date: string;
-    storage: number;
-    cost: number;
-    storageBytes: number;
-  }>> {
-    try {
-      const [usageHistory, costCalc] = await Promise.all([
-        this.getStorageUsageHistory(0, days),
-        this.getCostCalculation()
-      ]);
-
-      // Process usage history into chart data
-      const chartData = usageHistory.content.map(usage => ({
-        date: usage.timestamp.split('T')[0],
-        storage: usage.storageUsedInBytes / (1024 * 1024 * 1024), // Convert to GB
-        cost: usage.calculatedCost || 0,
-        storageBytes: usage.storageUsedInBytes
-      }));
-
-      // Sort by date and ensure we have data for each day
-      const sortedData = chartData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      
-      return sortedData;
-    } catch (error) {
-      console.error('Error fetching chart data:', error);
-      // Return mock data if API fails
-      return this.generateMockChartData(days);
-    }
-  }
-
-  private static generateMockChartData(days: number) {
-    return Array.from({ length: days }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (days - 1 - i));
-      return {
-        date: date.toISOString().split('T')[0],
-        storage: Math.random() * 3 + 1,
-        cost: Math.random() * 0.05 + 0.02,
-        storageBytes: Math.floor((Math.random() * 3 + 1) * 1024 * 1024 * 1024)
-      };
-    });
-  }
-
-  // Webhook handling (for frontend notification updates)
-  static async checkPaymentWebhookStatus(sessionId: string): Promise<boolean> {
-    try {
-      const status = await this.getPaymentStatus(sessionId);
-      return status.status === 'COMPLETED';
-    } catch (error) {
-      console.error('Error checking payment status:', error);
-      return false;
-    }
-  }
-
-  // Real-time cost calculation
-  static calculateInstantCost(storageBytes: number, costPerBytePerSecond: number, seconds: number): number {
-    return storageBytes * costPerBytePerSecond * seconds;
-  }
-
-  // Get aggregated dashboard data
-  static async getDashboardData(month?: number, year?: number) {
-    try {
-      const [storage, bill, history, usage, dailyCost] = await Promise.all([
-        this.getCurrentStorage(),
-        this.getMonthlyBill(month, year),
-        this.getStorageHistory(0, 10),
-        this.getStorageUsageHistory(0, 20),
-        this.getDailyCost()
-      ]);
-
-      const chartData = await this.getChartData(30);
-
-      return {
-        storage,
-        bill,
-        history,
-        usage,
-        dailyCost,
-        chartData
-      };
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      throw error;
-    }
+  // Utility method for formatting file size
+  static formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 }
 
-export default PaymentService;
+// Create and export a singleton instance
+const paymentService = new PaymentService();
+export default paymentService;
